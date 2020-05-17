@@ -65,10 +65,11 @@ const
    3.6 Combobox和RadioGrou的选项改为键值对的形式
    3.7 兼容Combobox无下拉选项时保存选项后打不开的问题
    3.8 浮动Item增加Lock属性用于锁定Item不可移动和修改
+   3.9 域Item保存时存Level
   }
 
-  HC_FileVersion = '3.8';
-  HC_FileVersionInt = 38;
+  HC_FileVersion = '3.9';
+  HC_FileVersionInt = 39;
 
   TabCharWidth = 28;  // 默认Tab宽度(五号) 14 * 2个
   DefaultColWidth = 50;
@@ -99,6 +100,8 @@ const
     ;
   /// <summary> 不能在行尾的字符 </summary>
   DontLineLastChar = '/\＼“‘';
+  /// <summary> 可以挤压宽度的字符 </summary>
+  LineSqueezeChar = '，。；、？“”';
 
   HCBoolText: array [Boolean] of Char = ('0', '1');
 
@@ -182,6 +185,36 @@ type
 //    psANSI_E, psArch_A, psArch_B, psArch_C,
 //    psArch_D, psArch_E, psArch_E1,
 //    ps16K, ps32K);
+
+  THCFont = class(TFont)
+  public
+    procedure FromCanvas(const ACanvas: TCanvas);
+    procedure ToCanvas(const ACanvas: TCanvas);
+  end;
+
+  THCPen = class(TPen)
+  public
+    procedure FromCanvas(const ACanvas: TCanvas);
+    procedure ToCanvas(const ACanvas: TCanvas);
+  end;
+
+  THCBrush = class(TBrush)
+  public
+    procedure FromCanvas(const ACanvas: TCanvas);
+    procedure ToCanvas(const ACanvas: TCanvas);
+  end;
+
+  THCCanvas = class
+  private
+    FFont: THCFont;
+    FPen: THCPen;
+    FBrush: THCBrush;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    procedure FromCanvas(const ACanvas: TCanvas);
+    procedure ToCanvas(const ACanvas: TCanvas);
+  end;
 
   THCCaretInfo = record
     X, Y, Height, PageIndex: Integer;
@@ -295,6 +328,8 @@ type
   function GetBorderSidePro(const ABorderSides: TBorderSides): string;
   procedure SetBorderSideByPro(const AValue: string; var ABorderSides: TBorderSides);
 
+  function HCDeleteBreak(const S: string): string;
+
   /// <summary> 保存长度小于65536个字节的字符串到流 </summary>
   procedure HCSaveTextToStream(const AStream: TStream; const S: string);
   procedure HCLoadTextFromStream(const AStream: TStream; var S: string; const AFileVersion: Word);
@@ -314,6 +349,10 @@ type
   {$IFDEF DEBUG}
   procedure DrawDebugInfo(const ACanvas: TCanvas; const ALeft, ATop: Integer; const AInfo: string);
   {$ENDIF}
+
+  procedure HCDrawArrow(const ACanvas: TCanvas; const AColor: TColor; const ALeft, ATop: Integer; const AType: Byte);
+
+  function SaveCanvas(const ACanvas: TCanvas): THCCanvas;
 
 var
   GCursor: TCursor;
@@ -343,6 +382,51 @@ begin
 end;
 {$ENDIF}
 
+procedure HCDrawArrow(const ACanvas: TCanvas; const AColor: TColor; const ALeft, ATop: Integer; const AType: Byte);
+begin
+  case AType of
+    0: // 上
+      begin
+        ACanvas.Pen.Color := AColor;
+        ACanvas.MoveTo(ALeft, ATop);
+        ACanvas.LineTo(ALeft - 1, ATop);
+        ACanvas.MoveTo(ALeft - 1, ATop + 1);
+        ACanvas.LineTo(ALeft + 2, ATop + 1);
+        ACanvas.MoveTo(ALeft - 2, ATop + 2);
+        ACanvas.LineTo(ALeft + 3, ATop + 2);
+        ACanvas.MoveTo(ALeft - 3, ATop + 3);
+        ACanvas.LineTo(ALeft + 4, ATop + 3);
+        ACanvas.MoveTo(ALeft - 4, ATop + 4);
+        ACanvas.LineTo(ALeft + 5, ATop + 4);
+      end;
+
+    1: // 下
+      begin
+        ACanvas.Pen.Color := AColor;
+        ACanvas.MoveTo(ALeft, ATop);
+        ACanvas.LineTo(ALeft - 1, ATop);
+        ACanvas.MoveTo(ALeft - 1, ATop - 1);
+        ACanvas.LineTo(ALeft + 2, ATop - 1);
+        ACanvas.MoveTo(ALeft - 2, ATop - 2);
+        ACanvas.LineTo(ALeft + 3, ATop - 2);
+        ACanvas.MoveTo(ALeft - 3, ATop - 3);
+        ACanvas.LineTo(ALeft + 4, ATop - 3);
+        ACanvas.MoveTo(ALeft - 4, ATop - 4);
+        ACanvas.LineTo(ALeft + 5, ATop - 4);
+      end;
+
+    2: // 左
+      begin
+
+      end;
+
+    3:  // 右
+      begin
+
+      end;
+  end;
+end;
+
 function CreateExtPen(const APen: TPen): HPEN;
 var
   vPenParams: TLogBrush;
@@ -356,6 +440,12 @@ begin
   vPenParams.lbHatch := 0;
   Result := ExtCreatePen({PenTypes[APen.Width <> 1]}PS_GEOMETRIC or PS_ENDCAP_SQUARE,
     APen.Width, vPenParams, 0, nil);
+end;
+
+function SaveCanvas(const ACanvas: TCanvas): THCCanvas;
+begin
+  Result := THCCanvas.Create;
+  Result.FromCanvas(ACanvas);
 end;
 
 function SwapBytes(AValue: Word): Word;
@@ -404,6 +494,11 @@ begin
   end
   else
     S := '';
+end;
+
+function HCDeleteBreak(const S: string): string;
+begin
+  Result := StringReplace(S, sLineBreak, '', [rfReplaceAll]);
 end;
 
 function GetUnicodeCharType(const AChar: Char): TCharType;
@@ -1090,6 +1185,69 @@ begin
   Self.Offset(Point.X, Point.Y);
 end;
 {$ENDIF}
+
+{ THCFont }
+
+procedure THCFont.FromCanvas(const ACanvas: TCanvas);
+begin
+  Self.Assign(ACanvas.Font);
+end;
+
+procedure THCFont.ToCanvas(const ACanvas: TCanvas);
+begin
+  ACanvas.Font.Assign(Self);
+end;
+
+{ THCCanvas }
+
+constructor THCCanvas.Create;
+begin
+  FFont := THCFont.Create;
+  FPen := THCPen.Create;
+  FBrush := THCBrush.Create;
+end;
+
+destructor THCCanvas.Destroy;
+begin
+  FreeAndNil(FFont);
+  FreeAndNil(FPen);
+  FreeAndNil(FBrush);
+  inherited Destroy;
+end;
+
+procedure THCCanvas.FromCanvas(const ACanvas: TCanvas);
+begin
+  FFont.FromCanvas(ACanvas);
+end;
+
+procedure THCCanvas.ToCanvas(const ACanvas: TCanvas);
+begin
+  FFont.ToCanvas(ACanvas);
+end;
+
+{ THCPen }
+
+procedure THCPen.FromCanvas(const ACanvas: TCanvas);
+begin
+  Self.Assign(ACanvas.Pen);
+end;
+
+procedure THCPen.ToCanvas(const ACanvas: TCanvas);
+begin
+  ACanvas.Pen.Assign(Self);
+end;
+
+{ THCBrush }
+
+procedure THCBrush.FromCanvas(const ACanvas: TCanvas);
+begin
+  Self.Assign(ACanvas.Brush);
+end;
+
+procedure THCBrush.ToCanvas(const ACanvas: TCanvas);
+begin
+  ACanvas.Brush.Assign(Self);
+end;
 
 initialization
   if HC_FILEFORMAT = 0 then

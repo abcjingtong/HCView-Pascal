@@ -465,8 +465,7 @@ end;
 
 procedure THCSectionData.DoInsertFloatItem(const AItem: THCCustomItem);
 begin
-  if Assigned(OnInsertItem) then
-    OnInsertItem(Self, AItem);
+  DoInsertItem(AItem);
 end;
 
 procedure THCSectionData.DoLoadFromStream(const AStream: TStream;
@@ -539,19 +538,17 @@ var
 begin
   Result := False;
 
-  if (Shift = [ssLeft]) and (FMouseDownIndex >= 0) then  // 按下拖拽
+  if Shift = [ssLeft] then  // 按下拖拽
   begin
-    if Self.ReadOnly then
-    begin
-      //GCursor := crDefault;
-      Result := True;
-      Exit;
-    end;
+    if Self.ReadOnly then Exit;
 
-    vFloatItem := FFloatItems[FMouseDownIndex];
-    Result := vFloatItem.MouseMove(Shift, X - vFloatItem.Left, Y - vFloatItem.Top);
-    if Result then
-      Style.UpdateInfoRePaint;
+    if FMouseDownIndex >= 0 then
+    begin
+      vFloatItem := FFloatItems[FMouseDownIndex];
+      Result := vFloatItem.MouseMove(Shift, X - vFloatItem.Left, Y - vFloatItem.Top);
+      if Result then
+        Style.UpdateInfoRePaint;
+    end;
   end
   else  // 普通鼠标移动
   begin
